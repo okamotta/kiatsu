@@ -1,146 +1,112 @@
-# 目的
-既存の気圧MVP（index.html + app.js）に「雨アプリ風UIでの頭痛リスク可視化」を追加したい。
-72時間予報から「いつ頭が痛くなる可能性が高いか」を時間帯バーで表示する。
+ゴール
+	•	既存MVPを視覚デザイン完成形にアップグレードし、**Lighthouse 90+（PWA/Perf/Access/Best Practices）**を達成。
+	•	主要端末（iOS/Android/小型～中型画面）で崩れゼロ。
+	•	GitHub Pagesで配布する静的PWAの完成。
 
-# 変更対象
-- index.html（HTML/CSSの追加と、Chart.js日付アダプタの読み込み）
-- app.js（72h予報取得・リスク判定・UI更新ロジック追加）
+仕様（UIデザイン・トーン）
+	•	カラーパレット（Tailwind基準）
+	•	Brand: sky-500 / hover sky-600（アクセント）
+	•	面: white（ライト）, gray-800（ダーク）
+	•	テキスト: gray-800（ライト）, gray-100（ダーク）
+	•	リスク帯: Low= emerald-200, Med= amber-200, High= rose-200
+	•	余白/ラディウス/影
+	•	角丸: rounded-2xl（24px）
+	•	影: shadow-lg（カード）
+	•	コンテナ横幅: max-w-2xl, ルート余白: p-4（sm以上は p-6）
+	•	タイポ
+	•	system-ui, -apple-system, Segoe UI, Roboto, Noto Sans JP, sans-serif
+	•	見出し：text-2xl font-bold / セクションタイトル：text-lg font-semibold / 本文：text-sm text-gray-500
+	•	レイアウト構成（上から）
+	1.	ヘッダー：タイトル、現在地ピル、テーマトグル（🌓）
+	2.	検索カード：都市入力・検索ボタン・現在地ボタン
+	3.	グラフカード：72h気圧グラフ＋リスクストリップ＋次のHighまでのカウントダウン
+	4.	スコア入力カード：0–5スライダー、現在値、保存ボタン（v1系の挙動維持）
+	5.	フッター：免責・バージョン
+	•	ダークモード
+	•	html.dark クラスで切替。OS追従をデフォルト、トグルで明示切替（localStorage.theme）。
 
-# 現状の前提
-- 都市検索(ID: city)・ボタン(searchBtn, geoBtn)
-- グラフcanvas(ID: chart)・インサイト表示(ID: insight)
-- Chart.jsはCDNで読み込み済み
-- （重要）既存IDは変更しないこと
+実装ステップ（順番厳守）
+	1.	Tailwind UI化（CDN継続で可）
+	•	<body> に bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100
+	•	主要セクションを rounded-2xl shadow-lg p-4 sm:p-6 bg-white dark:bg-gray-800 でカード化
+	•	既存ID/構造は変更禁止
+	2.	ヘッダー整備
+	•	左：text-2xl font-bold タイトル＋#locピル（px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-700 text-xs）
+	•	右：🌓トグル（押すと html.classList.toggle('dark') & localStorage.theme 更新、初期はOS追従）
+	3.	グラフ＆リスクパネルの視覚調整
+	•	canvas 上下に余白、ストリップ高さ=28px、6hごとに薄い目盛線
+	•	insight行に**「次のHighまで 残り X時間Y分」**（1分ごと更新）
+	•	しきい値文言は簡潔（“急降下＝3hで−6hPa” をtooltipで示す）
+	4.	アクセシビリティ
+	•	主要ボタンに aria-label
+	•	input#city に aria-describedby（例: “都市名で検索”）
+	•	カラコントラスト AA 以上（ダーク時の文字色調整）
+	•	フォーカスリング：focus:outline-none focus:ring-2 focus:ring-sky-500
+	5.	メタ・ヘッド最適化
+	•	<meta name="theme-color" content="#0ea5e9">（ライト時）
+	•	apple-mobile-web-app-capable="yes" / apple-mobile-web-app-status-bar-style="default"
+	•	viewport は既存維持、favicon も追加（favicon.svg or favicon.png）
+	6.	Lighthouse対策
+	•	画像（アイコン）は 正しいサイズ/type宣言
+	•	sw.js：更新時の新バージョン通知（skipWaiting→再読み込みバナー）
+	•	リソースは相対パス（./）でPages配信に最適化
+	•	可能なら defer ロード（CDNはそのままでも可）
+	7.	配布
+	•	README.md 作成（使い方・PWA追加・データ/プライバシー）
+	•	manifest.webmanifest の name/short_name/icons/start_url 最終確認
+	•	icon-192.png / icon-512.png を配置（仮でもOK）
 
-# 実装ステップ
-1. **dateアダプタの追加**
-   - index.html の `<head>` に以下を追加：
-     `<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>`
+変更ファイル
+	•	index.html：構造を保ったままTailwindクラス付与、ヘッダー/カードHTML、メタ・リンク追記
+	•	app.js：テーマトグル、カウントダウン処理（setInterval 1分）、小さなアクセシビリティ改善
+	•	sw.js：更新検知→「新しいバージョンがあります」トースト→skipWaiting メッセージハンドリング
+	•	manifest.webmanifest：name/short_name/theme_color/start_url/icons 最終調整
+	•	（任意）README.md：公開URLとインストール手順
 
-2. **リスクストリップUIの追加（index.html）**
-   - グラフ `<canvas id="chart">` の直後に以下のブロックを追加：
-     ```html
-     <div id="riskPanel" style="margin-top:12px">
-       <div style="font-size:12px;opacity:.7;margin-bottom:6px;">これから72時間の頭痛リスク</div>
-       <div id="riskStrip" class="risk-strip"></div>
-       <div id="riskLegend" style="display:flex;gap:8px;margin-top:6px;font-size:12px;opacity:.7;">
-         <span>🟥 High（急降下）</span><span>🟨 Medium（大きい変動）</span><span>🟩 Low</span>
-       </div>
-     </div>
-     ```
-   - `<style>` に下記を追加（Tailwind不使用の軽量CSS）：
-     ```css
-     .risk-strip{ display:grid; grid-template-columns: repeat(72,1fr);
-                  height:36px; border-radius:8px; overflow:hidden; background:#eee; }
-     .risk-cell{ height:100%; }
-     .risk-low{  background:#c6f6d5; }  /* 緑 */
-     .risk-med{  background:#fde68a; }  /* 黄 */
-     .risk-high{ background:#fecaca; }  /* 赤 */
-     .risk-tick{ border-right:1px solid rgba(0,0,0,.06); }
-     ```
+コード要件（抜粋）
+	•	既存IDは変更禁止：city, searchBtn, geoBtn, chart, insight, loc
+	•	スタイルはTailwindクラスのみ追加（インラインstyleは最小限）
+	•	ストリップCSS（高さ/色/区切り）は既存.risk-*クラスを上書きでOK
+	•	カウントダウン：nextHigh が無ければ“なし”、あれば現在時刻との差を毎分更新
+	•	SW更新通知：
+	•	SW側：self.skipWaiting() を message で実行
+	•	ページ側：registration.waiting を検知→バナー表示→「更新」クリックで postMessage('SKIP_WAITING') → window.location.reload()
 
-3. **72h予報へ拡張（app.js）**
-   - 既存の取得処理を、Open-Meteo /forecast で **72時間** 取るようにする。
-     - `hourly=pressure_msl,temperature_2m&forecast_days=3&timezone=auto`
-   - 取得後の配列は **先頭から72要素** を使う（`slice(0,72)`）。
+受け入れ基準（明確なDone定義）
+	•	Lighthouse（モバイル）：Performance/Access/PWA/Best Practices ≥ 90
+	•	主要幅（375/414/768px）で崩れなし、文字は読める/タップ余白16px以上
+	•	ダーク/ライト切替が即時反映、再訪時に設定保持
+	•	「次のHighまで 残りX時間Y分」が正しく更新、Highが無い場合は“なし”
+	•	SW更新通知が機能（手動でSWのバージョン文字列を上げて確認）
+	•	GitHub Pagesで https://okamotta.github.io/kiatsu/ が問題なく動作
 
-4. **リスク判定の実装（app.js）**
-   - しきい値（定数）：
-     - `THRESH_3H_DROP = -6`（High: 3時間で-6hPa以下）
-     - `THRESH_24H_RANGE = 10`（Medium: 24時間の変動幅が10hPa以上）
-   - アルゴリズム：
-     - `High`: `p[i] - p[i-3] <= -6` を満たすウィンドウ i-3..i を High=2 でマーキング
-     - `Medium`: 24h窓(i-23..i)の`max-min >= 10` かつ未マーキングなら Medium=1
-     - その他は Low=0
-   - 次のHigh開始時刻（未来）の最初のindexを見つけ、ISOや表示用文字列に整形。
+出力フォーマット（必須）
+	1.	手順（箇条書き）
+	2.	ファイル別の差分パッチ（index.html / app.js / sw.js / manifest.webmanifest / README.md）
+	•	どこに挿入/置換かコメントで明示
+	3.	検証チェックリスト（Lighthouse手順と想定スコア、モバイル幅、SW更新テスト）
+	4.	ロールバック方法（変更前に戻す簡単な説明）
 
-5. **UI更新（app.js）**
-   - `renderRiskStrip(levels, hours)` を実装し、`#riskStrip` に 72 個のdivを生成：
-     - `risk-cell risk-<low|med|high> risk-tick` を付与
-     - `title` 属性に `MM/DD HH:00 — Low/Medium/High` を入れる
-   - `#insight` には：
-     - Highがあれば：`⚠️ 次のHighは <時刻> 頃`
-     - 無ければ：`🙂 今後72時間に急降下の予測なし`
-
-6. **既存グラフとの連携（app.js）**
-   - 既存 `renderChart(hours, pressures, temps)` 呼び出しの直後に
-     `detectRiskZones -> renderRiskStrip -> insight更新` を追加する。
-   - 既存の都市検索/現在地ボタンの挙動は維持すること。
-   - 既存の LocalStorage スコアや他機能を壊さない。
-
-# 具体コード（app.jsに追記/変更する断片）
-- 先頭付近に定数とフォーマッタ
-  ```js
-  const THRESH_3H_DROP = -6;
-  const THRESH_24H_RANGE = 10;
-  const fmt = d => `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:00`;
-
-  	•	取得後の72hスライス＆リスク更新（既存ロード関数内を差し替え）
-    const data = await fetchPressure(lat, lon);
-const hours = data.hourly.time.slice(0,72);
-const pressures = data.hourly.pressure_msl.slice(0,72);
-const temps = data.hourly.temperature_2m.slice(0,72);
-renderChart(hours, pressures, temps);
-const { riskLevels, nextHigh } = detectRiskZones(pressures, hours);
-renderRiskStrip(riskLevels, hours);
-insightEl.textContent = nextHigh
-  ? `⚠️ 次のHighは ${fmt(new Date(nextHigh))} 頃`
-  : '🙂 今後72時間に急降下の予測なし';
-
-  	•	リスク判定
-    function detectRiskZones(pressures, hourStrs){
-  const n = pressures.length;
-  const levels = new Array(n).fill(0); // 0:Low 1:Med 2:High
-  const times = hourStrs.map(h => new Date(h));
-
-  for(let i=3;i<n;i++){
-    if (pressures[i] - pressures[i-3] <= THRESH_3H_DROP){
-      for(let j=i-3;j<=i;j++) levels[j] = 2;
-    }
+    メモ（実装のヒント）
+	•	カウントダウン：
+    let timerId;
+function startCountdown(nextHighIso){
+  clearInterval(timerId);
+  const el = document.getElementById('insight');
+  if(!nextHighIso){ el.textContent = '🙂 今後72時間に急降下の予測なし'; return; }
+  function tick(){
+    const ms = new Date(nextHighIso) - Date.now();
+    if(ms <= 0){ el.textContent = '⚠️ まもなく急降下（High）'; clearInterval(timerId); return; }
+    const h = Math.floor(ms/3600000), m = Math.floor((ms%3600000)/60000);
+    el.textContent = `⚠️ 次のHighまで 残り ${h}時間${m}分`;
   }
-  for(let i=23;i<n;i++){
-    const w = pressures.slice(i-23,i+1);
-    if (Math.max(...w) - Math.min(...w) >= THRESH_24H_RANGE){
-      for(let j=i-23;j<=i;j++) if (levels[j]===0) levels[j] = 1;
-    }
-  }
-  const now = Date.now();
-  let nextHigh = null;
-  for (let i=0;i<n;i++){
-    if (levels[i]===2 && new Date(hourStrs[i]).getTime() > now){ nextHigh = hourStrs[i]; break; }
-  }
-  return { riskLevels: levels, nextHigh };
+  tick(); timerId = setInterval(tick, 60000);
 }
 
-	•	リスクストリップ描画
-    function renderRiskStrip(levels, hourStrs){
-  const strip = document.getElementById('riskStrip');
-  if (!strip) return;
-  strip.innerHTML = '';
-  levels.forEach((lv, i) => {
-    const div = document.createElement('div');
-    div.className = `risk-cell risk-${lv===2?'high':lv===1?'med':'low'} risk-tick`;
-    div.title = `${fmt(new Date(hourStrs[i]))} — ${['Low','Medium','High'][lv]}`;
-    strip.appendChild(div);
-  });
-}
+detectRiskZones の結果から startCountdown(nextHigh) を呼ぶ。
 
-制約（守ってほしいこと）
-	•	IDや既存関数名の大規模リネーム禁止（city / searchBtn / geoBtn / chart / insight など）
-	•	追加ライブラリ禁止（Chart.jsとdate-fnsアダプタのみCDNで可）
-	•	既存機能（検索・現在地・グラフ・インサイト簡易文）は壊さない
-	•	プラグイン不要。背景ハイライトは今回「リスクストリップ」で実現する
+	•	SW更新トースト（概略）
+	•	sw.js:
+    self.addEventListener('message', (e)=>{ if(e.data==='SKIP_WAITING') self.skipWaiting(); });
 
-出力フォーマット
-	1.	実装手順（箇条書き）
-	2.	ファイル別の差分パッチ（index.html / app.js）
-	•	追加コードは「ここに挿入」のコメント付きでわかりやすく
-	3.	適用手順（どのブロックをどこへ入れるか）
-	4.	検証方法（都市検索→72h表示、色帯、insight、Consoleエラーなし、モバイル幅確認）
-
-受け入れ基準（Doneの定義）
-	•	72時間の気圧データが表示される
-	•	リスクストリップが赤/黄/緑の72本で表示される
-	•	「次のHigh開始時刻」が #insight に表示される（該当なしなら“なし”）
-	•	Consoleエラーがない
-	•	既存の検索/現在地ボタンが動く（崩れない）
+    

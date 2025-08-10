@@ -1,262 +1,396 @@
-document.addEventListener('DOMContentLoaded', () => {
-    // --- 要素取得 (変更なし) ---
-    const cityInput = document.getElementById('city');
-    const searchButton = document.getElementById('search');
-    const getLocationButton = document.getElementById('getLocation');
-    const pressureCanvas = document.getElementById('pressureChart');
-    const headacheScoreSlider = document.getElementById('headacheScore');
-    const scoreValueSpan = document.getElementById('scoreValue');
-    const saveScoreButton = document.getElementById('saveScore');
-    const warningBanner = document.getElementById('warningBanner');
-    const thresholdSlider = document.getElementById('thresholdSlider');
-    const thresholdValueSpan = document.getElementById('thresholdValue');
-    const insightEl = document.getElementById('insight');
-    const themeToggleButton = document.getElementById('theme-toggle');
-    const darkIcon = document.getElementById('theme-toggle-dark-icon');
-    const lightIcon = document.getElementById('theme-toggle-light-icon');
-    const exportCsvButton = document.getElementById('exportCsv');
+// app.js — 気圧×頭痛ログ（フル置換版）
 
-    // --- グローバル変数 (変更なし) ---
-    let chart;
-    const HEADACHE_DATA_KEY = 'headacheData';
-    let lastLocation = { latitude: 35.6895, longitude: 139.6917 };
-    let currentPressureData = [];
-    let currentTimeObjects = [];
+(() => {
+  // ========= DOM =========
+  const cityInput = document.getElementById('city');
+  const searchButton = document.getElementById('search');
+  const getLocationButton = document.getElementById('getLocation');
 
-    // --- ここから挿入 ---
-    const THRESH_3H_DROP = -6;
-    const THRESH_24H_RANGE = 10;
-    const fmt = d => `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:00`;
-    // --- ここまで挿入 ---
+  const canvasEl = document.getElementById('pressureChart');
+  const insightEl = document.getElementById('insight');
+  const riskStripEl = document.getElementById('riskStrip');
 
-    // --- 初期化 (変更なし) ---
-    function initialize() {
-        updateThemeIcons();
-        setupEventListeners();
-        thresholdValueSpan.textContent = `${thresholdSlider.value} hPa`;
-        updateChart(lastLocation.latitude, lastLocation.longitude);
+  // ドロワー（メニュー）
+  const menuToggle = document.getElementById('menu-toggle');
+  const menuClose = document.getElementById('menu-close');
+  const menuOverlay = document.getElementById('menu-overlay');
+  const menuDrawer = document.getElementById('menu-drawer');
+
+  // しきい値スライダー
+  const thresholdSlider = document.getElementById('thresholdSlider');
+  const thresholdValue  = document.getElementById('thresholdValue');
+
+  // 頭痛スコア
+  const saveScoreButton = document.getElementById('saveScore');
+  const scoreSlider     = document.getElementById('headacheScore');
+  const scoreValue      = document.getElementById('scoreValue');
+
+  // 履歴
+  const historyListEl = document.getElementById('headacheHistoryList');
+
+  // ========= 定数・状態 =========
+  const HEADACHE_DATA_KEY = 'headacheData';
+  const THRESH_24H_RANGE = 10; // 24h変動幅10hPa以上 → Medium
+  let   THRESH_3H_DROP   = -6; // 3hで-6hPa以下 → High（UIから上書き）
+  let   chartInstance = null;
+  let   lastForecast = null; // { timeISO: string[], pressures: number[] }
+
+  // ========= Utils =========
+  const fmt = d => `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:00`;
+
+  // ========= ストレージ系 =========
+  function getHeadacheData() {
+    try {
+      return JSON.parse(localStorage.getItem(HEADACHE_DATA_KEY) || '[]');
+    } catch {
+      return [];
     }
+  }
 
-    // --- イベントリスナー設定 (thresholdSliderのイベントを削除) ---
-    function setupEventListeners() {
-        themeToggleButton.addEventListener('click', toggleTheme);
-        headacheScoreSlider.addEventListener('input', () => { scoreValueSpan.textContent = headacheScoreSlider.value; });
-        // thresholdSlider.addEventListener('input', () => { // このイベントは新しい仕様では不要
-        //     thresholdValueSpan.textContent = `${thresholdSlider.value} hPa`;
-        //     if (chart) updateChart(lastLocation.latitude, lastLocation.longitude);
-        // });
-        searchButton.addEventListener('click', () => { if (cityInput.value) geocodeCity(cityInput.value); });
-        getLocationButton.addEventListener('click', () => {
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(pos => updateChart(pos.coords.latitude, pos.coords.longitude), () => alert('現在地の取得に失敗しました。'));
-            } else {
-                alert('お使いのブラウザは位置情報取得に対応していません。');
-            }
-        });
-        saveScoreButton.addEventListener('click', saveHeadacheScore);
-        exportCsvButton.addEventListener('click', exportDataToCsv);
+  function setHeadacheData(arr) {
+    localStorage.setItem(HEADACHE_DATA_KEY, JSON.stringify(arr));
+  }
+
+  // 保存 → 履歴更新 → グラフ即反映
+  function saveHeadacheScore() {
+    if (!scoreSlider) return;
+    const score = parseInt(scoreSlider.value, 10);
+    const data = getHeadacheData();
+    data.unshift({ time: new Date().toISOString(), score });
+    setHeadacheData(data);
+    renderHistoryList();
+
+    // 直近予報があれば、赤点を即反映
+    if (lastForecast?.timeISO && lastForecast?.pressures) {
+      renderChart(lastForecast.timeISO.map(t => new Date(t)), lastForecast.pressures);
     }
+  }
 
-    // --- テーマ切替 (変更なし) ---
-    function updateThemeIcons() {
-        if (document.documentElement.classList.contains('dark')) {
-            darkIcon.classList.remove('hidden');
-            lightIcon.classList.add('hidden');
-        } else {
-            darkIcon.classList.add('hidden');
-            lightIcon.classList.remove('hidden');
-        }
+  function renderHistoryList() {
+    if (!historyListEl) return;
+    const data = getHeadacheData();
+    historyListEl.innerHTML = '';
+    if (!data.length) {
+      historyListEl.innerHTML = `<p class="text-slate-500 text-center text-sm">まだ記録がありません</p>`;
+      return;
     }
-    function toggleTheme() {
-        const isDark = document.documentElement.classList.toggle('dark');
-        localStorage.setItem('theme', isDark ? 'dark' : 'light');
-        updateThemeIcons();
-        if (chart) updateChart(lastLocation.latitude, lastLocation.longitude);
+    data.slice(0, 10).forEach(rec => {
+      const d = new Date(rec.time);
+      const row = document.createElement('div');
+      row.className = 'flex items-center justify-between p-2 rounded-lg';
+      const hh = String(d.getHours()).padStart(2,'0');
+      const mm = String(d.getMinutes()).padStart(2,'0');
+      row.innerHTML = `<div><span class="font-semibold">${d.getMonth()+1}/${d.getDate()} ${hh}:${mm}</span> <span class="text-sm ml-2">スコア: <strong class="text-lg text-indigo-500">${rec.score}</strong></span></div>`;
+      historyListEl.appendChild(row);
+    });
+  }
+
+  // ========= データ取得 =========
+  async function geocodeCity(name) {
+    const url = `https://nominatim.openstreetmap.org/search?city=${encodeURIComponent(name)}&format=json&limit=1`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!data.length) throw new Error('都市が見つかりませんでした。');
+    return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon), label: data[0].display_name };
+  }
+
+  async function fetchForecast(lat, lon) {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=pressure_msl&forecast_days=3&timezone=auto`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`API ${res.status}`);
+    const data = await res.json();
+    const timeISO = (data.hourly?.time || []).slice(0, 72);
+    const pressures = (data.hourly?.pressure_msl || []).slice(0, 72).map(Number);
+    if (!timeISO.length || timeISO.length !== pressures.length) {
+      throw new Error('Invalid weather data');
     }
+    return { timeISO, pressures };
+  }
 
-    // --- データとグラフ処理 (ここから大幅に変更) ---
-    async function updateChart(latitude, longitude) {
-        lastLocation = { latitude, longitude };
-        try {
-            const apiUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=pressure_msl,temperature_2m&forecast_days=3&timezone=auto`;
-            const response = await fetch(apiUrl);
-            const data = await response.json();
-            
-            // 72時間にスライス
-            const timeStrs = data.hourly.time.slice(0, 72);
-            currentTimeObjects = timeStrs.map(t => new Date(t));
-            currentPressureData = data.hourly.pressure_msl.slice(0, 72);
-            const labels = currentTimeObjects.map(t => `${t.getDate()}日${t.getHours()}時`);
+  // ========= 頭痛スコア点データ =========
+  // 直近の予報期間に入るスコアを {x:Date, y:Number} に整形
+  function getRecentScorePoints(timeISO) {
+    const data = getHeadacheData();
+    if (!timeISO?.length) return [];
+    const start = new Date(timeISO[0]).getTime();
+    const end   = new Date(timeISO[timeISO.length - 1]).getTime();
+    return data
+      .map(r => ({ t: new Date(r.time).getTime(), y: Number(r.score) }))
+      .filter(p => p.t >= start && p.t <= end)
+      .map(p => ({ x: new Date(p.t), y: p.y }));
+  }
 
-            // グラフ描画（リスク表示は分離）
-            renderChart(labels, currentPressureData, getHeadacheData(), currentTimeObjects);
-            
-            // リスク判定とUI更新
-            const { riskLevels, nextHigh } = detectRiskZones(currentPressureData, timeStrs);
-            renderRiskStrip(riskLevels, timeStrs);
-            insightEl.textContent = nextHigh
-              ? `⚠️ 次のHighは ${fmt(new Date(nextHigh))} 頃`
-              : '🙂 今後72時間に急降下の予測なし';
-
-        } catch (error) {
-            console.error('Error fetching or processing data:', error);
-            alert('データの取得または処理に失敗しました。');
-        }
-    }
-
-    // --- グラフ描画 (リスク背景色を削除) ---
-    function renderChart(labels, pressureData, headacheData, timeObjects) {
-        const isDarkMode = document.documentElement.classList.contains('dark');
-        const gridColor = isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)';
-        const textColor = isDarkMode ? '#cbd5e1' : '#475569';
-        const pressureColor = 'rgb(79, 70, 229)';
-        const pressureBgColor = 'rgba(79, 70, 229, 0.1)';
-
-        const headachePoints = headacheData.map(item => {
-            const index = findClosestTimeIndex(new Date(item.time), timeObjects);
-            return { x: index, y: pressureData[index], r: item.score * 3 + 3 };
-        });
-
-        if (chart) chart.destroy();
-
-        chart = new Chart(pressureCanvas, {
-            type: 'line', // 背景バーが不要になったのでlineに
-            data: { labels, datasets: [
-                { 
-                    label: '気圧 (hPa)', 
-                    data: pressureData, 
-                    borderColor: pressureColor, 
-                    backgroundColor: pressureBgColor, 
-                    fill: true, 
-                    tension: 0.4, 
-                    pointRadius: 0, 
-                    pointHoverRadius: 5 
-                },
-                {
-                    type: 'bubble', 
-                    label: '頭痛スコア', 
-                    data: headachePoints, 
-                    backgroundColor: 'rgba(239, 68, 68, 0.7)', 
-                    borderColor: 'rgba(255,255,255,0.8)', 
-                    borderWidth: 2 
-                }
-            ]},
-            options: { responsive: true, scales: {
-                x: { type: 'category', grid: { display: false }, ticks: { color: textColor, maxRotation: 90, minRotation: 70, autoSkip: true, maxTicksLimit: 12 } },
-                y: { title: { display: true, text: '気圧 (hPa)', color: textColor }, grid: { color: gridColor, drawBorder: false }, ticks: { color: textColor } }
-            }, plugins: { tooltip: { 
-                backgroundColor: isDarkMode ? 'rgba(30, 41, 59, 0.8)' : 'rgba(255,255,255,0.8)',
-                titleColor: isDarkMode ? '#e2e8f0' : '#1e293b',
-                bodyColor: isDarkMode ? '#e2e8f0' : '#1e293b',
-                borderColor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-                borderWidth: 1,
-                padding: 10,
-                callbacks: {
-                    title: (items) => `${timeObjects[items[0].dataIndex].toLocaleDateString('ja-JP')} ${items[0].label}`,
-                    label: (ctx) => ctx.dataset.type === 'bubble' ? `頭痛レベル: ${(ctx.raw.r - 3) / 3}` : `${ctx.dataset.label}: ${ctx.formattedValue} hPa`
-                }
-            }, legend: { display: false }}, interaction: { intersect: false, mode: 'index' } }
-        });
-    }
-    
-    // --- ここから関数を置き換え/追加 ---
-
-    // (既存のdetectRiskZonesとupdateInsightは削除)
-
-    function detectRiskZones(pressures, hourStrs){
-      const n = pressures.length;
-      const levels = new Array(n).fill(0); // 0:Low 1:Med 2:High
-      
-      // Highリスク判定
-      for(let i=3; i<n; i++){
-        if (pressures[i] - pressures[i-3] <= THRESH_3H_DROP){
-          for(let j=i-3; j<=i; j++) levels[j] = 2;
-        }
-      }
-      // Mediumリスク判定
-      for(let i=23; i<n; i++){
-        const w = pressures.slice(i-23, i+1);
-        if (Math.max(...w) - Math.min(...w) >= THRESH_24H_RANGE){
-          for(let j=i-23; j<=i; j++) if (levels[j]===0) levels[j] = 1;
-        }
-      }
-      
-      const now = Date.now();
-      let nextHigh = null;
-      for (let i=0; i<n; i++){
-        if (levels[i]===2 && new Date(hourStrs[i]).getTime() > now){
-          nextHigh = hourStrs[i];
-          break;
+  // ========= 表示系 =========
+  function renderChart(labels, pressures) {
+    if (!canvasEl) return;
+    const ctx = canvasEl.getContext('2d');
+    if (chartInstance) chartInstance.destroy();
+  
+    const scorePoints = getRecentScorePoints(lastForecast?.timeISO);
+  
+    chartInstance = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          // 気圧ライン（ふつうの配列データ）
+          {
+            label: '海面更正気圧 (hPa)',
+            data: pressures,
+            borderColor: 'rgb(79, 70, 229)',
+            backgroundColor: 'rgba(79, 70, 229, 0.1)',
+            tension: 0.35,
+            pointRadius: 0,
+            fill: true,
+            yAxisID: 'y'
+          },
+          // 頭痛スコア（{x,y} の散布図）
+          {
+            type: 'scatter',
+            label: '頭痛スコア',
+            data: scorePoints,      // [{x:Date, y:Number}]
+            parsing: false,         // ← 散布図だけに付ける！
+            yAxisID: 'y1',
+            pointRadius: 5,
+            pointHoverRadius: 6,
+            showLine: false,
+            backgroundColor: 'rgb(239, 68, 68)',
+            borderColor: 'rgb(239, 68, 68)'
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        // ← ここに parsing:false は置かない！
+        scales: {
+          x: { type: 'time', time: { unit: 'hour', tooltipFormat: 'PPpp' } },
+          y: {
+            title: { display: true, text: '気圧 (hPa)' },
+            // 必要なら表示レンジを軽く固定：
+            // suggestedMin: 990, suggestedMax: 1035
+          },
+          y1: {
+            position: 'right',
+            min: 0, max: 5, ticks: { stepSize: 1 },
+            grid: { drawOnChartArea: false },
+            title: { display: true, text: 'スコア' }
+          }
+        },
+        plugins: {
+          legend: { labels: { usePointStyle: true } },
+          tooltip: { mode: 'nearest', intersect: false }
         }
       }
-      // バナー表示はHighリスクがある場合のみ
-      warningBanner.classList.toggle('hidden', !nextHigh);
-      return { riskLevels: levels, nextHigh };
+    });
+  }
+
+  function detectRiskZones(pressures, hoursISO) {
+    const n = pressures.length;
+    const levels = new Array(n).fill(0); // 0 Low, 1 Medium, 2 High
+
+    // High: 3hで-6hPa（可変）
+    for (let i = 3; i < n; i++) {
+      if (pressures[i] - pressures[i-3] <= THRESH_3H_DROP) {
+        for (let j = i-3; j <= i; j++) levels[j] = 2;
+      }
+    }
+    // Medium: 24h変動幅 >= 10
+    for (let i = 23; i < n; i++) {
+      const w = pressures.slice(i-23, i+1);
+      if (Math.max(...w) - Math.min(...w) >= THRESH_24H_RANGE) {
+        for (let j = i-23; j <= i; j++) if (levels[j] === 0) levels[j] = 1;
+      }
     }
 
-    function renderRiskStrip(levels, hourStrs){
-      const strip = document.getElementById('riskStrip');
-      if (!strip) return;
-      strip.innerHTML = '';
-      levels.forEach((lv, i) => {
-        const div = document.createElement('div');
-        const tickClass = (new Date(hourStrs[i]).getHours()) % 6 === 0 ? ' risk-tick' : '';
-        div.className = `risk-cell risk-${lv===2?'high':lv===1?'med':'low'}${tickClass}`;
-        div.title = `${fmt(new Date(hourStrs[i]))} — ${['Low','Medium','High'][lv]}`;
-        strip.appendChild(div);
+    // 次のHigh
+    const now = Date.now();
+    let nextHigh = null;
+    for (let i = 0; i < n; i++) {
+      if (levels[i] === 2 && new Date(hoursISO[i]).getTime() > now) {
+        nextHigh = hoursISO[i];
+        break;
+      }
+    }
+
+    return { levels, nextHigh };
+  }
+
+  function renderRiskStrip(levels, hoursISO) {
+    if (!riskStripEl) return;
+    riskStripEl.innerHTML = '';
+    levels.forEach((lv, i) => {
+      const div = document.createElement('div');
+      const tickClass = (i % 6 === 0) ? ' risk-tick-left' : '';
+      div.className = `risk-cell ${lv===2?'risk-high':lv===1?'risk-med':'risk-low'}${tickClass}`;
+      div.title = `${fmt(new Date(hoursISO[i]))} — ${['Low','Medium','High'][lv]}`;
+      riskStripEl.appendChild(div);
+    });
+  }
+
+  function composeInsight(hoursISO, pressures, nextHighISO) {
+    if (!insightEl) return;
+    const last24 = pressures.slice(0, 24);
+    const range24 = last24.length ? (Math.max(...last24) - Math.min(...last24)) : 0;
+    const dp3 = pressures.length >= 4 ? (pressures[3] - pressures[0]) : 0;
+
+    const currentRisk = (dp3 <= THRESH_3H_DROP) ? 'High'
+                      : (range24 >= THRESH_24H_RANGE) ? 'Medium'
+                      : 'Low';
+
+    const fmtHM = d => `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:00`;
+
+    if (nextHighISO) {
+      const when = new Date(nextHighISO);
+      insightEl.innerHTML =
+        `現在リスク：<b>${currentRisk}</b><br>` +
+        `次のHigh：<b>${fmtHM(when)}</b><br>` +
+        `24h変動幅：<b>${range24.toFixed(1)} hPa</b> / 3h変化：<b>${dp3.toFixed(1)} hPa</b>`;
+    } else {
+      insightEl.innerHTML =
+        `現在リスク：<b>${currentRisk}</b><br>` +
+        `次のHigh：<b>なし（72時間以内）</b><br>` +
+        `24h変動幅：<b>${range24.toFixed(1)} hPa</b> / 3h変化：<b>${dp3.toFixed(1)} hPa</b>`;
+    }
+  }
+
+  // ========= メイン更新 =========
+  async function updateChart(lat, lon, label='') {
+    if (insightEl) insightEl.textContent = `${label || 'データ'}を読み込み中…`;
+    try {
+      const { timeISO, pressures } = await fetchForecast(lat, lon);
+      lastForecast = { timeISO, pressures };
+
+      renderChart(timeISO.map(t => new Date(t)), pressures);
+
+      const { levels, nextHigh } = detectRiskZones(pressures, timeISO);
+      renderRiskStrip(levels, timeISO);
+      composeInsight(timeISO, pressures, nextHigh);
+    } catch (e) {
+      console.error('Failed to update chart:', e);
+      if (insightEl) insightEl.textContent = `エラー: ${e.message}`;
+    }
+  }
+
+  // ========= イベント =========
+  function openMenu() {
+    if (!menuDrawer || !menuOverlay) return;
+    menuDrawer.classList.remove('translate-x-full');
+    menuOverlay.classList.remove('hidden');
+  }
+  function closeMenu() {
+    if (!menuDrawer || !menuOverlay) return;
+    menuDrawer.classList.add('translate-x-full');
+    menuOverlay.classList.add('hidden');
+  }
+
+  function setupEventListeners() {
+    // メニュー
+    if (menuToggle) menuToggle.addEventListener('click', openMenu);
+    if (menuClose)  menuClose.addEventListener('click', closeMenu);
+    if (menuOverlay) menuOverlay.addEventListener('click', closeMenu);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
+    const clearAllBtn = document.getElementById('clearAll');
+    if (clearAllBtn) {
+      clearAllBtn.addEventListener('click', () => {
+        if (confirm('保存されている頭痛の全記録を削除します。よろしいですか？')) {
+          clearAllHeadacheData();
+        }
       });
     }
 
-    // --- データ管理 (変更なし) ---
-    function getHeadacheData() { return JSON.parse(localStorage.getItem(HEADACHE_DATA_KEY)) || []; }
-    function saveHeadacheScore() {
-        const headacheData = getHeadacheData();
-        headacheData.push({ time: new Date().toISOString(), score: parseInt(headacheScoreSlider.value, 10) });
-        localStorage.setItem(HEADACHE_DATA_KEY, JSON.stringify(headacheData));
-        updateChart(lastLocation.latitude, lastLocation.longitude);
-    }
-    function findClosestTimeIndex(time, timeObjects) {
-        const timeMs = time.getTime();
-        let closestIndex = 0, minDiff = Infinity;
-        timeObjects.forEach((t, index) => {
-            const diff = Math.abs(t.getTime() - timeMs);
-            if (diff < minDiff) { minDiff = diff; closestIndex = index; }
-        });
-        return closestIndex;
-    }
-    function exportDataToCsv() {
-        const headacheData = getHeadacheData();
-        if (headacheData.length === 0) { alert('エクスポートする頭痛データがありません。'); return; }
-        if (currentPressureData.length === 0) { alert('気圧データがまだ読み込まれていません。'); return; }
-        const header = ['日時', '気圧(hPa)', '頭痛スコア'];
-        const rows = headacheData.map(log => {
-            const logTime = new Date(log.time);
-            const closestIndex = findClosestTimeIndex(logTime, currentTimeObjects);
-            const pressure = currentPressureData[closestIndex].toFixed(2);
-            const formattedTime = logTime.toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-            return [formattedTime, pressure, log.score];
-        });
-        const csvContent = [header, ...rows].map(e => `"${e.join('","')}"`).join("\n");
-        const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.setAttribute("href", url);
-        link.setAttribute("download", "zutsu-log.csv");
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    }
-    async function geocodeCity(city) {
-        try {
-            const response = await fetch(`https://nominatim.openstreetmap.org/search?city=${city}&format=json&limit=1`);
-            const data = await response.json();
-            if (data.length > 0) updateChart(parseFloat(data[0].lat), parseFloat(data[0].lon));
-            else alert('都市が見つかりませんでした。');
-        } catch (error) {
-            console.error('Error geocoding city:', error);
-            alert('都市の検索中にエラーが発生しました。');
+    // しきい値
+    if (thresholdSlider) {
+      if (thresholdValue) thresholdValue.textContent = `${thresholdSlider.value} hPa`;
+      THRESH_3H_DROP = parseFloat(thresholdSlider.value);
+      thresholdSlider.addEventListener('input', () => {
+        THRESH_3H_DROP = parseFloat(thresholdSlider.value);
+        if (thresholdValue) thresholdValue.textContent = `${thresholdSlider.value} hPa`;
+        // 直近データがあれば再評価
+        if (lastForecast && lastForecast.timeISO && lastForecast.pressures) {
+          try {
+            const { levels, nextHigh } = detectRiskZones(lastForecast.pressures, lastForecast.timeISO);
+            renderRiskStrip(levels, lastForecast.timeISO);
+            composeInsight(lastForecast.timeISO, lastForecast.pressures, nextHigh);
+            // スコア点はそのままでもOK（しきい値は影響しない）
+          } catch (e) { console.warn('threshold re-eval failed', e); }
         }
+      });
     }
 
-    initialize();
-});
+    // 頭痛スコアUI
+    if (scoreSlider && scoreValue) {
+      scoreValue.textContent = String(scoreSlider.value);
+      scoreSlider.addEventListener('input', (e) => {
+        scoreValue.textContent = String(e.target.value);
+      });
+    }
+    if (saveScoreButton) {
+      saveScoreButton.addEventListener('click', saveHeadacheScore);
+    }
+    
+    function clearAllHeadacheData() {
+      // 全削除
+      localStorage.removeItem(HEADACHE_DATA_KEY);
+      renderHistoryList();
+    
+      // もしグラフに「頭痛スコア」の赤点データセットを出しているなら取り除く
+      if (chartInstance && chartInstance.data && Array.isArray(chartInstance.data.datasets)) {
+        const idx = chartInstance.data.datasets.findIndex(
+          ds => ds.label === '頭痛スコア' || ds.yAxisID === 'y1'
+        );
+        if (idx > -1) {
+          chartInstance.data.datasets.splice(idx, 1);
+          chartInstance.update();
+        }
+      }
+    }
+
+    // 検索
+    if (searchButton && cityInput) {
+      searchButton.addEventListener('click', async () => {
+        const name = cityInput.value.trim();
+        if (!name) return;
+        try {
+          const { lat, lon, label } = await geocodeCity(name);
+          updateChart(lat, lon, label);
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+      cityInput.addEventListener('keypress', e => {
+        if (e.key === 'Enter') searchButton.click();
+      });
+    }
+
+    // 現在地
+    if (getLocationButton) {
+      getLocationButton.addEventListener('click', () => {
+        if (!navigator.geolocation) return alert('位置情報が使えない環境です');
+        navigator.geolocation.getCurrentPosition(
+          pos => updateChart(pos.coords.latitude, pos.coords.longitude, '現在地'),
+          () => alert('現在地の取得に失敗しました。'),
+          { enableHighAccuracy: true, timeout: 10000 }
+        );
+      });
+    }
+  }
+
+  // ========= 初期化 =========
+  function boot() {
+    renderHistoryList();
+    setupEventListeners();
+
+    // 初期表示：現在地 → 失敗で東京
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        p => updateChart(p.coords.latitude, p.coords.longitude, '現在地'),
+        () => updateChart(35.6895, 139.6917, '東京')
+      );
+    } else {
+      updateChart(35.6895, 139.6917, '東京');
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', boot);
+})();

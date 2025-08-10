@@ -15,88 +15,59 @@
         tailwind.config = { darkMode: 'class' }
     </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- ここから変更 -->
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
-    <!-- ここまで変更 -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <style>
-        /* スライダーのつまみのスタイル */
-        input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 20px;
-            height: 20px;
-            background: #4f46e5; /* Indigo */
-            border-radius: 50%;
-            cursor: pointer;
-            border: 3px solid #fff;
-            box-shadow: 0 0 2px rgba(0,0,0,0.3);
-        }
-        input[type="range"]::-moz-range-thumb {
-            width: 20px;
-            height: 20px;
-            background: #4f46e5; /* Indigo */
-            border-radius: 50%;
-            cursor: pointer;
-            border: 3px solid #fff;
-            box-shadow: 0 0 2px rgba(0,0,0,0.3);
-        }
-        /* ここから挿入 */
-        .risk-strip{ display:grid; grid-template-columns: repeat(72,1fr);
-                     height:36px; border-radius:8px; overflow:hidden; background:#eee; }
-        .dark .risk-strip{ background:#374151; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 20px; height: 20px; background: #4f46e5; border-radius: 50%; cursor: pointer; border: 3px solid #fff; box-shadow: 0 0 2px rgba(0,0,0,0.3); }
+        input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; background: #4f46e5; border-radius: 50%; cursor: pointer; border: 3px solid #fff; box-shadow: 0 0 2px rgba(0,0,0,0.3); }
+        .risk-strip{ display:grid; grid-template-columns: repeat(72,1fr); height:28px; border-radius:8px; overflow:hidden; background:#e2e8f0; }
+        .dark .risk-strip{ background:#334155; }
         .risk-cell{ height:100%; }
-        .risk-low{  background:#c6f6d5; }  /* 緑 */
-        .risk-med{  background:#fde68a; }  /* 黄 */
-        .risk-high{ background:#fecaca; }  /* 赤 */
-        .risk-tick{ border-right:1px solid rgba(0,0,0,.06); }
-        .dark .risk-tick{ border-right:1px solid rgba(255,255,255,.08); }
-        /* ここまで挿入 */
+        .risk-low{  background:#dcfce7; }
+        .risk-med{  background:#fef9c3; }
+        .risk-high{ background:#fee2e2; }
+        .dark .risk-low{  background-color: rgba(74, 222, 128, 0.2); }
+        .dark .risk-med{  background-color: rgba(250, 204, 21, 0.2); }
+        .dark .risk-high{ background-color: rgba(248, 113, 113, 0.2); }
+        .risk-tick-left{ border-left: 1px solid rgba(0,0,0,0.15); }
+        .dark .risk-tick-left{ border-left: 1px solid rgba(255,255,255,0.15); }
     </style>
 </head>
 <body class="bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 transition-colors duration-300">
 
     <div class="container mx-auto p-4 max-w-2xl">
 
-        <!-- (ヘッダーや都市検索部分は変更なし) -->
         <header class="text-center mb-8 relative">
             <h1 class="text-4xl font-bold text-slate-800 dark:text-slate-200">Zutsu Log</h1>
             <p class="text-slate-500 dark:text-slate-400 mt-2">気圧の変化とあなたの頭痛を記録します。</p>
-            <button id="theme-toggle" class="absolute top-0 right-0 p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none transition-colors">
-                <svg id="theme-toggle-dark-icon" class="hidden h-6 w-6" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
-                <svg id="theme-toggle-light-icon" class="hidden h-6 w-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm-.707 7.071a1 1 0 011.414 0l.707.707a1 1 0 11-1.414 1.414l-.707-.707a1 1 0 010-1.414zM3 11a1 1 0 100-2H2a1 1 0 100 2h1z" fill-rule="evenodd" clip-rule="evenodd"></path></svg>
-            </button>
-        </header>
-        <div id="warningBanner" class="hidden bg-red-100 dark:bg-red-900/30 border-l-4 border-red-500 text-red-700 dark:text-red-300 p-4 mb-6 rounded-2xl shadow-lg" role="alert">
-            <p class="font-bold">急激な気圧低下を検知</p>
-            <p>体調の変化にご注意ください。</p>
-        </div>
-        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-lg mb-6">
-            <h2 class="text-xl font-semibold mb-4 text-slate-800 dark:text-slate-200">場所を選択</h2>
-            <div class="flex flex-col sm:flex-row gap-3">
-                <input type="text" id="city" placeholder="例: 東京" class="flex-grow p-3 border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow">
-                <button id="search" class="bg-indigo-600 text-white px-5 py-3 rounded-xl hover:bg-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">検索</button>
-                <button id="getLocation" class="bg-slate-500 text-white px-5 py-3 rounded-xl hover:bg-slate-600 transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">現在地</button>
+            <div class="absolute top-0 right-0 flex items-center space-x-1">
+                <button id="menu-toggle" class="p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none transition-colors" aria-label="メニューを開く">
+                    <svg width="24" height="24" viewBox="0 0 20 20" fill="currentColor"><path d="M3 6h14M3 10h14M3 14h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                </button>
+                <button id="theme-toggle" class="p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 focus:outline-none transition-colors">
+                    <svg id="theme-toggle-dark-icon" class="hidden h-6 w-6" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
+                    <svg id="theme-toggle-light-icon" class="hidden h-6 w-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm-.707 7.071a1 1 0 011.414 0l.707.707a1 1 0 11-1.414 1.414l-.707-.707a1 1 0 010-1.414zM3 11a1 1 0 100-2H2a1 1 0 100 2h1z" fill-rule="evenodd" clip-rule="evenodd"></path></svg>
+                </button>
             </div>
-        </div>
+        </header>
+
 
 
         <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-lg mb-6">
             <h2 class="text-xl font-semibold mb-4 text-slate-800 dark:text-slate-200">気圧・頭痛グラフ</h2>
-            <canvas id="pressureChart"></canvas>
-            <!-- ここから挿入 -->
+            <div id="pressureChartWrapper" class="relative" style="height:280px">
+                <canvas id="pressureChart"></canvas>
+            </div>
             <div id="riskPanel" style="margin-top:12px">
               <div style="font-size:12px;opacity:.7;margin-bottom:6px;" class="dark:text-slate-300">これから72時間の頭痛リスク</div>
               <div id="riskStrip" class="risk-strip"></div>
               <div id="riskLegend" style="display:flex;gap:8px;margin-top:6px;font-size:12px;opacity:.7;" class="dark:text-slate-300">
-                <span>🟥 High（急降下）</span><span>🟨 Medium（大きい変動）</span><span>🟩 Low</span>
+                <span>🟥 High</span><span>🟨 Medium</span><span>🟩 Low</span>
               </div>
             </div>
-            <!-- ここまで挿入 -->
         </div>
         
-        <div id="insight" class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-lg mb-6 text-center text-lg font-semibold"></div>
+        <div id="insight" class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-lg mb-6 text-center text-base"></div>
 
-        <!-- (頭痛記録、しきい値設定、フッターなどは変更なし) -->
         <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-lg mb-6">
             <h2 class="text-xl font-semibold mb-4 text-slate-800 dark:text-slate-200">頭痛を記録する</h2>
             <div class="flex flex-col sm:flex-row items-center gap-4">
@@ -106,32 +77,56 @@
                 <button id="saveScore" class="bg-indigo-600 text-white px-6 py-3 rounded-xl hover:bg-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">記録</button>
             </div>
         </div>
-        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-lg mb-6">
-            <h2 class="text-xl font-semibold mb-4 text-slate-800 dark:text-slate-200">注意表示のしきい値</h2>
-            <div class="flex flex-col sm:flex-row items-center gap-4">
-                <label for="thresholdSlider" class="font-medium flex-shrink-0">気圧低下 (hPa/3h)</label>
-                <input type="range" id="thresholdSlider" min="-10" max="-1" value="-6" class="flex-grow h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer">
-                <span id="thresholdValue" class="font-bold text-indigo-600 dark:text-indigo-400 text-lg w-16 text-center">-6 hPa</span>
-            </div>
-        </div>
-        <div class="my-8 text-center">
-            <button id="exportCsv" class="bg-slate-600 text-white px-6 py-3 rounded-xl hover:bg-slate-700 transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">頭痛データをCSVにエクスポート</button>
-        </div>
-        <footer class="text-center mt-12 text-sm text-slate-500 dark:text-slate-400">
-            <p>本サービスは医療的な診断を提供するものではありません。表示される情報はあくまで参考情報としてご利用ください。</p>
-        </footer>
 
+        <footer class="text-center mt-12 text-sm text-slate-500 dark:text-slate-400">
+            <p>本サービスは医療的な診断を提供するものではありません。</p>
+        </footer>
     </div>
+
+    <div id="menu-overlay" class="fixed inset-0 bg-black/30 hidden z-40"></div>
+    <aside id="menu-drawer" class="fixed top-0 right-0 h-full w-[360px] max-w-[90%] bg-white dark:bg-slate-800 shadow-2xl translate-x-full transition-transform duration-300 z-50">
+        <div class="p-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
+            <h3 class="font-semibold text-slate-800 dark:text-slate-200">メニュー</h3>
+            <button id="menu-close" class="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-400" aria-label="閉じる">✕</button>
+        </div>
+
+        <div class="p-4 space-y-8 overflow-y-auto h-[calc(100%-56px)]">
+            <section>
+                <h4 class="font-semibold mb-3 text-slate-800 dark:text-slate-200">場所を選択</h4>
+            <div class="flex flex-col sm:flex-row gap-3">
+              <input type="text" id="city" placeholder="例: 東京" class="flex-grow p-3 border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow">
+              <button id="search" class="bg-indigo-600 text-white px-5 py-3 rounded-xl hover:bg-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">検索</button>
+              <button id="getLocation" class="bg-slate-500 text-white px-5 py-3 rounded-xl hover:bg-slate-600 transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">現在地</button>
+            </div>
+        </section>
+        
+        <div class="p-4 space-y-8 overflow-y-auto h-[calc(100%-56px)]">
+            <section>
+                <h4 class="font-semibold mb-3 text-slate-800 dark:text-slate-200">注意表示のしきい値</h4>
+                <div class="flex items-center gap-3">
+                    <label for="thresholdSlider" class="text-sm w-40">気圧低下 (hPa/3h)</label>
+                    <input type="range" id="thresholdSlider" min="-10" max="-1" value="-6" class="flex-grow h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer">
+                    <span id="thresholdValue" class="font-bold text-indigo-600 dark:text-indigo-400 w-16 text-right">-6 hPa</span>
+                </div>
+            </section>
+            <section>
+                <h4 class="font-semibold mb-3 text-slate-800 dark:text-slate-200">頭痛の履歴</h4>
+                <div id="headacheHistoryList" class="space-y-3 max-h-80 overflow-y-auto pr-2"></div>
+                <div class="text-center mt-4">
+                    <button id="clearAll"
+                      class="px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 active:scale-[0.99] transition">
+                      全記録を削除
+                    </button>
+                  </div>
+            </section>
+        </div>
+    </aside>
 
     <script src="app.js"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js').then(registration => {
-                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
-                }, err => {
-                    console.log('ServiceWorker registration failed: ', err);
-                });
+                navigator.serviceWorker.register('./sw.js').then(reg => console.log('SW registered.', reg), err => console.error('SW registration failed:', err));
             });
         }
     </script>
