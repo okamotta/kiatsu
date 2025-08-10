@@ -15,7 +15,9 @@
         tailwind.config = { darkMode: 'class' }
     </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <!-- ここから変更 -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <!-- ここまで変更 -->
     <style>
         /* スライダーのつまみのスタイル */
         input[type="range"]::-webkit-slider-thumb {
@@ -38,12 +40,24 @@
             border: 3px solid #fff;
             box-shadow: 0 0 2px rgba(0,0,0,0.3);
         }
+        /* ここから挿入 */
+        .risk-strip{ display:grid; grid-template-columns: repeat(72,1fr);
+                     height:36px; border-radius:8px; overflow:hidden; background:#eee; }
+        .dark .risk-strip{ background:#374151; }
+        .risk-cell{ height:100%; }
+        .risk-low{  background:#c6f6d5; }  /* 緑 */
+        .risk-med{  background:#fde68a; }  /* 黄 */
+        .risk-high{ background:#fecaca; }  /* 赤 */
+        .risk-tick{ border-right:1px solid rgba(0,0,0,.06); }
+        .dark .risk-tick{ border-right:1px solid rgba(255,255,255,.08); }
+        /* ここまで挿入 */
     </style>
 </head>
 <body class="bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 transition-colors duration-300">
 
     <div class="container mx-auto p-4 max-w-2xl">
 
+        <!-- (ヘッダーや都市検索部分は変更なし) -->
         <header class="text-center mb-8 relative">
             <h1 class="text-4xl font-bold text-slate-800 dark:text-slate-200">Zutsu Log</h1>
             <p class="text-slate-500 dark:text-slate-400 mt-2">気圧の変化とあなたの頭痛を記録します。</p>
@@ -52,12 +66,10 @@
                 <svg id="theme-toggle-light-icon" class="hidden h-6 w-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm-.707 7.071a1 1 0 011.414 0l.707.707a1 1 0 11-1.414 1.414l-.707-.707a1 1 0 010-1.414zM3 11a1 1 0 100-2H2a1 1 0 100 2h1z" fill-rule="evenodd" clip-rule="evenodd"></path></svg>
             </button>
         </header>
-
         <div id="warningBanner" class="hidden bg-red-100 dark:bg-red-900/30 border-l-4 border-red-500 text-red-700 dark:text-red-300 p-4 mb-6 rounded-2xl shadow-lg" role="alert">
             <p class="font-bold">急激な気圧低下を検知</p>
             <p>体調の変化にご注意ください。</p>
         </div>
-
         <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-lg mb-6">
             <h2 class="text-xl font-semibold mb-4 text-slate-800 dark:text-slate-200">場所を選択</h2>
             <div class="flex flex-col sm:flex-row gap-3">
@@ -67,13 +79,24 @@
             </div>
         </div>
 
+
         <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-lg mb-6">
             <h2 class="text-xl font-semibold mb-4 text-slate-800 dark:text-slate-200">気圧・頭痛グラフ</h2>
             <canvas id="pressureChart"></canvas>
+            <!-- ここから挿入 -->
+            <div id="riskPanel" style="margin-top:12px">
+              <div style="font-size:12px;opacity:.7;margin-bottom:6px;" class="dark:text-slate-300">これから72時間の頭痛リスク</div>
+              <div id="riskStrip" class="risk-strip"></div>
+              <div id="riskLegend" style="display:flex;gap:8px;margin-top:6px;font-size:12px;opacity:.7;" class="dark:text-slate-300">
+                <span>🟥 High（急降下）</span><span>🟨 Medium（大きい変動）</span><span>🟩 Low</span>
+              </div>
+            </div>
+            <!-- ここまで挿入 -->
         </div>
         
         <div id="insight" class="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-lg mb-6 text-center text-lg font-semibold"></div>
 
+        <!-- (頭痛記録、しきい値設定、フッターなどは変更なし) -->
         <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-lg mb-6">
             <h2 class="text-xl font-semibold mb-4 text-slate-800 dark:text-slate-200">頭痛を記録する</h2>
             <div class="flex flex-col sm:flex-row items-center gap-4">
@@ -83,7 +106,6 @@
                 <button id="saveScore" class="bg-indigo-600 text-white px-6 py-3 rounded-xl hover:bg-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">記録</button>
             </div>
         </div>
-
         <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-lg mb-6">
             <h2 class="text-xl font-semibold mb-4 text-slate-800 dark:text-slate-200">注意表示のしきい値</h2>
             <div class="flex flex-col sm:flex-row items-center gap-4">
@@ -92,11 +114,9 @@
                 <span id="thresholdValue" class="font-bold text-indigo-600 dark:text-indigo-400 text-lg w-16 text-center">-6 hPa</span>
             </div>
         </div>
-
         <div class="my-8 text-center">
             <button id="exportCsv" class="bg-slate-600 text-white px-6 py-3 rounded-xl hover:bg-slate-700 transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5">頭痛データをCSVにエクスポート</button>
         </div>
-
         <footer class="text-center mt-12 text-sm text-slate-500 dark:text-slate-400">
             <p>本サービスは医療的な診断を提供するものではありません。表示される情報はあくまで参考情報としてご利用ください。</p>
         </footer>
